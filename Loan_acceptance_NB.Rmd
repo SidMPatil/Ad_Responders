@@ -1,0 +1,85 @@
+---
+title: "Loan_acceptance_knn"
+author: "Siddharth Patil"
+date: "May 11, 2018"
+output: html_document
+---
+#Import the data
+```{r}
+data = as.data.frame(read.csv("UniversalBank.csv", header = T))
+```
+
+#Geocoding the zipcodes
+```{r}
+library(zipcode)
+data(zipcode)
+zipcode$zip = as.integer(zipcode$zip)
+```
+
+#Changing Zipcodes to lattitude and longitude in our dataset
+```{r}
+data_geo = merge(data, zipcode, by.x = "ZIP.Code", by.y = "zip", all.x = T)
+data_geo = data_geo[,-c(1,14,15)]
+#data_geo
+
+```
+
+#Balancing the dataset
+```{r}
+#oversampling the minority class and undersampling the majority class
+library(ROSE)
+data_geo = ovun.sample(Personal.Loan ~ ., data = data_geo, method = "both",N = 4999)$data
+
+#plot(as.factor(data_geo$Personal.Loan)) #plot indicates that balancing is done
+```
+
+#Divide the data set into test and train datasets
+```{r}
+## 75% of the sample size
+smp_size = floor(0.75 * nrow(data_geo))
+
+## set the seed to make your partition reproducible
+set.seed(123)
+train_ind = sample(seq_len(nrow(data_geo)), size = smp_size)
+
+train_data = data_geo[train_ind, ]
+test_data = data_geo[-train_ind, ]
+```
+
+#Variable selection
+```{r}
+Log_reg = glm(Personal.Loan ~ ., data_geo, family = "binomial")
+#summary(NB) # to identify the significant attributes (Pr(>|z|) < 0.05)
+
+library(broom)
+tm = tidy(Log_reg) #data frame with model summary parameters as columns
+
+# get variables with p value less than 0.05
+library(dplyr)
+sign_variables = tm$term[tm$p.value < 0.05] %>% paste(collapse = " + ")
+sign_variables = paste0('Personal.Loan', ' ~ ', sign_variables)
+sign_variables
+```
+
+#Build model using Naive Bayes
+```{r}
+library(e1071)
+NB = naiveBayes(as.factor(Personal.Loan) ~ Income + Family + CCAvg + Education + Securities.Account + CD.Account + Online + CreditCard, train_data)
+```
+
+# Use the model to make predictions for the test data set
+```{r}
+test_predict = predict(NB, test_data)
+```
+
+#Model diagnostics
+```{r}
+#Confusion matrix
+library(caret)
+confusionMatrix(table(test_data$Personal.Loan, test_predict))
+
+#ROC curve
+roc.curve(test_data$Personal.Loan, test_predict)
+
+```
+
